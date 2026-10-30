@@ -1,0 +1,129 @@
+# Render Blueprint for the NovaAI backend (gateway + 4 microservices).
+# Put this file at the REPO ROOT. The frontend deploys separately on Vercel.
+#
+# Before deploying, create:
+#   - Upstash Redis (free)  -> gives a rediss:// URL for REDIS_URL
+#   - MongoDB Atlas (exists) -> MONGODB_URI
+# Secrets use `sync: false`, so Render prompts for them on first deploy and
+# they are NEVER committed to git. Service URLs are filled in after the first
+# deploy, once each service has its https://*.onrender.com address.
+#
+# Each service uses rootDir: backend and installs BOTH the backend-root deps
+# (ioredis, used by shared/redis) and its own deps.
+
+services:
+  # ---------------- AUTH (sets the session cookie) ----------------
+  - type: web
+    name: novaai-auth
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: npm install && npm install --prefix services/auth
+    startCommand: node services/auth/index.js
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      # Firebase admin: add a Render "Secret File" (dashboard) at path:
+      #   services/auth/serviceAccountKey.json   (paste the JSON contents)
+
+  # ---------------- CHAT ----------------
+  - type: web
+    name: novaai-chat
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: npm install && npm install --prefix services/chat
+    startCommand: node services/chat/index.js
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+
+  # ---------------- AGENT (LLMs, search, PDF, PPT, vision) ----------------
+  - type: web
+    name: novaai-agent
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: npm install && npm install --prefix services/agent
+    startCommand: node services/agent/index.js
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: GROQ_API_KEY
+        sync: false
+      - key: OPENROUTER_API_KEY
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: TAVILY_API_KEY
+        sync: false
+      - key: AUTH_SERVICE
+        sync: false   # https://novaai-auth.onrender.com
+      - key: CHAT_SERVICE
+        sync: false   # https://novaai-chat.onrender.com
+      - key: PUBLIC_BASE_URL
+        sync: false   # https://novaai-gateway.onrender.com  (for PPT download links)
+
+  # ---------------- BILLING (Razorpay) ----------------
+  - type: web
+    name: novaai-billing
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: npm install && npm install --prefix services/billing
+    startCommand: node services/billing/index.js
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: MONGODB_URI
+        sync: false
+      - key: AUTH_SERVICE
+        sync: false   # https://novaai-auth.onrender.com
+      - key: RAZORPAY_KEY_ID
+        sync: false
+      - key: RAZORPAY_KEY_SECRET
+        sync: false
+
+  # ---------------- GATEWAY (the only public entry point) ----------------
+  - type: web
+    name: novaai-gateway
+    runtime: node
+    plan: free
+    region: oregon
+    rootDir: backend
+    buildCommand: npm install && npm install --prefix gateway
+    startCommand: node gateway/index.js
+    healthCheckPath: /
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: REDIS_URL
+        sync: false
+      - key: FRONTEND_URL
+        sync: false   # https://your-app.vercel.app  (no trailing slash)
+      - key: AUTH_SERVICE
+        sync: false   # https://novaai-auth.onrender.com
+      - key: CHAT_SERVICE
+        sync: false   # https://novaai-chat.onrender.com
+      - key: AGENT_SERVICE
+        sync: false   # https://novaai-agent.onrender.com
+      - key: BILLING_SERVICE
+        sync: false   # https://novaai-billing.onrender.com
